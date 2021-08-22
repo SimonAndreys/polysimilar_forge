@@ -14,10 +14,10 @@ You can chose from which anvil comes the image copied in each boxes. For example
 You can open a zooming window in which you zoom indefinitely on the fractal, revealing its self-similar nature. Well, sometimes the fractal is similar to another fractal, so let's call it "polysimilar".
 
 To use the interface, you need to have python 3 with the libraries cv2 and pySimpleUi. Put the two code files in the same directory, and execute the file "polysimilar_ui.py" with Python from this directory. For example, with Anaconda, set a terminal in the directory and do:
-<anaconda path>/anaconda3/bin/python <directory path>/polysimilar_ui.py
+"anaconda path"/anaconda3/bin/python "directory path"/polysimilar_ui.py
 
- You can also do it from an IDE but don't forget to set the console in the files's directory !
- If you want to modify the anvils, get more anvils and more maps, you have to edit the polysimilar_ui.py file, after the "if __name__="__main__" at the end.
+ You can also execute the file it from an IDE but don't forget to set the console in the files's directory !
+ If you want to modify the anvils, get more anvils and more maps, you have to edit the polysimilar_ui.py file, after the if __name__="__main__" at the end.
   
  
 
