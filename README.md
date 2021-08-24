@@ -46,7 +46,7 @@ Of course you don't want your fractal to disapear during the manipulation so I p
  
 <image src="https://user-images.githubusercontent.com/74018582/130679580-b3f89875-f01f-408e-aa58-cec62409bf39.png" width=700>
 
- Under the fern image, two of the maps have for origin "B", and the last has for origin "A". This means that, at each iteration, instead of copying the image A in the two upper boxes, we copy the image of the fractal B ! The larger box still contains a copy of A.
+ Under the fern image, two of the maps have for origin "B", and the first has for origin "A". This means that, at each iteration, instead of copying the image A in the two upper boxes, we copy the image of the fractal B ! The larger box still contains a copy of A.
  Saddly, the ferndragon is ultimately self-similar:
  
  <image src="https://media.giphy.com/media/5FHvJaiwdOY94Ri7Pl/giphy.gif?cid=790b76117b1cc036a1de4ef34d3153a0ec1df7929e714b56&rid=giphy.gif&ct=g">
