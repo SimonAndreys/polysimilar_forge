@@ -10,7 +10,7 @@ from networkx.drawing.nx_agraph import to_agraph
 class NotConvergent(Exception):
     pass
 
-def mask(rgbimage, min=40):  #mask of the nonzero pixels of an rgb image
+def mask(rgbimage, min=10):  #mask of the nonzero pixels of an rgb image
         imhsv=cv2.cvtColor(rgbimage, cv2.COLOR_BGR2HSV)
         return cv2.inRange(imhsv, np.array([0,0,min]),np.array([255,255,255]))
 
