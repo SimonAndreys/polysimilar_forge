@@ -2,10 +2,7 @@ import numpy as np
 import cv2
 import copy
 
-#for the graphs
-from matplotlib import pyplot as plt
-import networkx as nx
-from networkx.drawing.nx_agraph import to_agraph 
+
 
 class NotConvergent(Exception):
     pass
