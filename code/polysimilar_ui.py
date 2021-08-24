@@ -6,33 +6,44 @@ import copy
 import time
 
 
-FRACTAL_COLOR=[176,212,48]
-LINE_COLOR="purple"
+FRACTAL_COLOR=[254,102,198]
+LINE_COLOR="white"
 POINT_COLOR="blue"
+
+POINT_RADIUS=7
 LINEWIDTH=2
 DIAGWIDTH=1
 ZOOMNFRAMES=30
 ZOOMSLEEP=0.01
 
 
+
+sg.theme('darkGrey3')
+
+GRAPH_BACKGROUND_COLOR="dim grey"
+
+
 class Point():
-    def __init__(self, pos,graph, color="blue", linecolor="white" ):
+    def __init__(self, pos,graph, color="blue", linecolor="white", pointradius=POINT_RADIUS ):
         self.color = color
         self.linecolor=linecolor
         self.pos=np.array(pos)
         self.graph=graph
-        self.elem=graph.draw_circle((pos[0], pos[1]), 5, fill_color=color, line_color=self.linecolor)
+        self.pointradius=pointradius
+        self.elem=graph.draw_circle((pos[0], pos[1]), self.pointradius, fill_color=color, line_color=self.linecolor)
         self.anchorpos=pos
+        
+     
 
     def relocate(self, newpos):
         self.graph.delete_figure(self.elem)
         self.pos=newpos
-        self.elem=self.graph.draw_circle((newpos[0], newpos[1]), 5, fill_color=self.color, line_color=self.linecolor)
+        self.elem=self.graph.draw_circle((newpos[0], newpos[1]), self.pointradius, fill_color=self.color, line_color=self.linecolor)
 
     def translate(self, delta): #translate from anchorpos
         self.graph.delete_figure(self.elem)
         self.pos=delta+self.anchorpos
-        self.elem=self.graph.draw_circle((self.pos[0], self.pos[1]), 5, fill_color=self.color, line_color=self.linecolor)
+        self.elem=self.graph.draw_circle((self.pos[0], self.pos[1]), self.pointradius, fill_color=self.color, line_color=self.linecolor)
 
     def isclicked(self, pos):
         dist=np.sqrt((pos[0]-self.pos[0])**2+(pos[1]-self.pos[1])**2)
@@ -171,12 +182,12 @@ class Anvil():
         self.graph_image=None #this will be an image on the graph, to be created by the forge when the window is finalized.
 
     def layout(self, anvilNames):
-        graph_layout=[[sg.Graph(self.dimSpace, (0, self.dimSpace[1]), (self.dimSpace[0], 1), key="graph_"+self.name, enable_events=True, drag_submits=True)]]
+        graph_layout=[[sg.Graph(self.dimSpace, (0, self.dimSpace[1]), (self.dimSpace[0], 1), key="graph_"+self.name, enable_events=True, drag_submits=True,  background_color=GRAPH_BACKGROUND_COLOR)]]
         line_layout=[[sg.Text("map"+str(i)+" Origin", key=self.name+str(i)+"text")] +\
         [sg.Combo(anvilNames,default_value=self.name, key="origin_"+self.name+str(i)) ] \
          for i in range(len(self.tilePositions))]
         layout=[[sg.Frame("",graph_layout)] ,\
-            [sg.Col(line_layout, size=(self.dimSpace[0], 100), scrollable=True)],\
+            [sg.Col(line_layout, size=(self.dimSpace[0], 70), scrollable=True)],\
             [sg.Button("Open zooming window", key="zoomingActivation_"+self.name),sg.Text(" Multiply size by : "), sg.Combo([1+i/10 for i in range(20)], key="multiplier_"+self.name, default_value=1.0)]]
         return layout
 
@@ -201,7 +212,7 @@ class Forge():
         anvilNames=[anvil.name for anvil in self.anvils]
         anvils_line=[[ sg.Frame("Anvil "+anvil.name, anvil.layout(anvilNames), font="Any 12", title_color="white") for anvil in self.anvils]]
         win=sg.Window("Forge", [[[sg.Text("Warning, zooming may freeze if the maps are too large or overlap too much. Too be improved...")]],\
-            [sg.Col(anvils_line, size=(self.dimensions[0], self.dimensions[1]-100), scrollable=True) ], \
+            [sg.Col(anvils_line, size=(self.dimensions[0], self.dimensions[1]-50), scrollable=True) ], \
             [sg.Button(button_text="Reset Images", key="reset"),\
             sg.Button(button_text="Iterate", key="iterate", size=(6,1)) ]])
         win.Finalize()
@@ -250,7 +261,7 @@ class Forge():
 
     def reactEvent(self,event, value):
         if event!="__TIMEOUT__":
-            print(event)
+            pass
         for anvil in self.anvils:
             for tileNumber in range(len(anvil.tiles)):
                 self.updateFractalOrigin(anvil, tileNumber, value)
@@ -382,10 +393,10 @@ def main_loop(forge):
 
 if __name__ == '__main__':
 
-    anvilWidth=400
-    anvilHeight=500
-    imageWidth=275
-    imageHeight=375
+    anvilWidth=550
+    anvilHeight=450
+    imageWidth=450
+    imageHeight=350
     imageZero=[50,50]
 
     anvil2Width=400
@@ -394,8 +405,8 @@ if __name__ == '__main__':
     image2Height=275
     image2Zero=[50,50]
 
-    winWidth=1024
-    winHeight=768
+    winWidth=1015
+    winHeight=815
 
 
     anvil=Anvil("A", (anvilWidth, anvilHeight), (imageWidth, imageHeight), imageZero, numberOfTiles=3)
@@ -404,10 +415,9 @@ if __name__ == '__main__':
     
     main_loop(forge)
 
-   #main loop     
+  
     
 
     
-
 
 
