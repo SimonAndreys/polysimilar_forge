@@ -4,6 +4,8 @@ This is an interface to construct fractal Iterated Functions Sets, with a "polys
 
 It was submitted to the "Summer of Math Exposition" by 3blue1brown. If you just want the exposition and you don't want to use the interface, skip the "installation" part and just read the exposition bellow.
 
+Note: This version of the code and exposition won't change until the reviewing of the Summer Of Math Exposition is finished. The branch -version-2- contains an updated version of the forge, with many new functionalities (saving, adding maps and anvils, etc). I will merge that branch into main after the 14th of September.
+
 # Installation
 
 To use the interface, you need to have python with the libraries cv2 and pySimpleGUi. Download the two code files from the code directory of this git and save them in the same directory. You shall then compile the file "polysimilar_ui.py" with Python from this directory. For example, with Anaconda, set a terminal in the directory and do:
