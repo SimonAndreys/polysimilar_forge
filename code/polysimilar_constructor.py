@@ -2,12 +2,17 @@ import numpy as np
 import cv2
 import copy
 
-
+#for the graphs
+from matplotlib import pyplot as plt
+import networkx as nx
+from networkx.drawing.nx_agraph import to_agraph 
 
 class NotConvergent(Exception):
     pass
 
-def mask(rgbimage, min=10):  #mask of the nonzero pixels of an rgb image
+BRIGHTEN_CUTOFF=3
+
+def mask(rgbimage, min=3):  #mask of the nonzero pixels of an rgb image
         imhsv=cv2.cvtColor(rgbimage, cv2.COLOR_BGR2HSV)
         return cv2.inRange(imhsv, np.array([0,0,min]),np.array([255,255,255]))
 
@@ -16,7 +21,7 @@ def collision(mask1, mask2):
         return False
     return True
 
-def brighten(im, backgroundIm):
+def brighten(im, backgroundIm, cutoff=BRIGHTEN_CUTOFF):
     '''m=mask(im)
     imhsv=cv2.cvtColor(im, cv2.COLOR_BGR2HSV)
     for i in range(imhsv.shape[0]):
@@ -25,7 +30,7 @@ def brighten(im, backgroundIm):
     im2=cv2.cvtColor(imhsv, cv2.COLOR_HSV2BGR)
     return cv2.bitwise_and(im2, im2, mask=m)
     '''
-    m=mask(im)
+    m=mask(im, min=cutoff)
     return cv2.bitwise_and(backgroundIm, backgroundIm, mask=m)
 
 
@@ -39,8 +44,6 @@ class Affine_transform():
         self.trimat()
         self.blankImage=None
         self.isImageDefined=False
-
-
 
     @classmethod
     def tripoints(cls, originalPoints, modifiedPoints, probability=1):
@@ -136,7 +139,6 @@ class Polysimilar(): #finitely decomposable fractal
         self.updateCurrentImage()
 
         
-   
     def updateChildImage(self, child):
         child.image=child.map.cv2warp(self.images[child.name], dimensions=self.currentImageDims) 
         #we also update (or create) the mask of elem in the current image, as an attribute of the child elem
@@ -148,8 +150,9 @@ class Polysimilar(): #finitely decomposable fractal
             self.updateChildImage(child)
             self.currentImage=cv2.bitwise_or(self.currentImage, child.image)
 
+    def addChild(self, imageName, child):
+        self.families[imageName].append(child)
     
-
     def grandChilds(self, elem, mask=None):  #elem is a Child object, you can filter by elements intersecting the mask
         grandChilds=[]
         for child in self.families[elem.name]:
@@ -185,9 +188,9 @@ class Polysimilar(): #finitely decomposable fractal
         for fracname in self.images:
             self.refineImage(fracname)
 
-    def brightenAllImages(self):
+    def brightenAllImages(self, cutoff=BRIGHTEN_CUTOFF):
         for name in self.images:
-            self.images[name]=brighten(self.images[name], self.originalImages[name])
+            self.images[name]=brighten(self.images[name], self.originalImages[name], cutoff=cutoff)
 
     def childOfZoom(self, child, xmin, ymin, zoomcoef):
         t=Affine_transform(zoomcoef*child.map.m, zoomcoef*(child.map.t-[xmin, ymin]), child.map.p )
@@ -341,15 +344,3 @@ if __name__ == '__main__':
             frac.updateCurrentImage()
             image=frac.currentImage
             cv2.imshow("image", image)
-
-        
-
-
-
-
-
-        
-
-
-
-
