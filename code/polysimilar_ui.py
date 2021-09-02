@@ -8,7 +8,7 @@ import re
 import screeninfo
 
 
-FRACTAL_COLOR=[254,102,198]
+FRACTAL_COLOR=[248,208,138]
 LINE_COLOR="white"
 POINT_COLOR="blue"
 
@@ -16,8 +16,11 @@ POINT_RADIUS=7
 ACTIVATED_POINT_RADIUS=10
 LINEWIDTH=2
 DIAGWIDTH=1
-ZOOMNFRAMES=30
+
+ZOOMSTEP=1.3
+ZOOMNFRAMES=10
 ZOOMSLEEP=0.01
+SAVERATIO=5
 
 MAX_MAPS_PER_ANVILS=5
 MAX_ANVILS=16
@@ -27,9 +30,22 @@ MONITOR_WIDTH, MONITOR_HEIGHT=monitor.width, monitor.height
 
 
 
-sg.theme('darkGrey3')
+sg.theme('darkBrown5')
+GRAPH_BACKGROUND_COLOR="gray29"
 
-GRAPH_BACKGROUND_COLOR="dim grey"
+
+
+def sfn(n):   #string from natural number, replacing - by m for easier copying and pasting
+    if n<0:
+        return 'm'+str(int(-n))
+    else:
+        return str(int(n))  
+
+def sign(l):
+    if l=='m':
+        return -1
+    else:
+        return 1  
 
 
 class Point():
@@ -71,21 +87,25 @@ class Point():
         self.elem=self.graph.draw_circle((self.pos[0], self.pos[1]), self.pointRadius, fill_color=self.color, line_color=self.linecolor)
 
 class Cross():
-    def __init__(self, pos, graph, color="red"):
+    def __init__(self, pos, graph, color="brown", width=2):
         self.color = color
+        self.width=width
         self.pos=np.array(pos)
         self.graph=graph
         self.draw()
     
     def draw(self):
         crosslength=10
-        self.cross1=self.graph.draw_line(tuple(self.pos-[0,crosslength]), tuple(self.pos+[0,crosslength]), color=self.color, width=3)
-        self.cross2=self.graph.draw_line(tuple(self.pos-[crosslength,0]), tuple(self.pos+[crosslength,0]), color=self.color, width=3)
+        self.cross1=self.graph.draw_line(tuple(self.pos-[0,crosslength]), tuple(self.pos-[0,crosslength//2]), color=self.color, width=self.width)
+        self.cross2=self.graph.draw_line(tuple(self.pos-[crosslength,0]), tuple(self.pos-[crosslength//2,0]), color=self.color, width=self.width)
+        self.cross3=self.graph.draw_line(tuple(self.pos+[0,crosslength]), tuple(self.pos+[0,crosslength//2]), color=self.color, width=self.width)
+        self.cross4=self.graph.draw_line(tuple(self.pos+[crosslength,0]), tuple(self.pos+[crosslength//2,0]), color=self.color, width=self.width)
+
+
 
     def relocate(self, newpos):
         newpos=np.array(newpos)
-        self.graph.delete_figure(self.cross1)
-        self.graph.delete_figure(self.cross2)
+        [self.graph.delete_figure(line) for line in [self.cross1, self.cross2, self.cross3, self.cross4]]
         self.pos=newpos
         self.draw()
 
@@ -104,7 +124,7 @@ class Tile():
         self.points=[self.zeropoint, self.point1, self.point2, self.point3]
         self.grasped=None  #when grasped, this is the number of the grasped point (0,1,2,3)
         #a regular expression pattern to modify the map from keyboard input
-        self.repattern=re.compile(r'Mp0x_(?P<x0>\d+)_y_(?P<y0>\d+)_p1x_(?P<x1>\d+)_y_(?P<y1>\d+)_p2x_(?P<x2>\d+)_y_(?P<y2>\d+)$')
+        self.repattern=re.compile(r'Mp0x_(?P<x0sign>m?)(?P<x0>\d+)_y_(?P<y0sign>m?)(?P<y0>\d+)_p1x_(?P<x1sign>m?)(?P<x1>\d+)_y_(?P<y1sign>m?)(?P<y1>\d+)_p2x_(?P<x2sign>m?)(?P<x2>\d+)_y_(?P<y2sign>m?)(?P<y2>\d+)$')
         self.drawlines()
 
     def affineTrans(self, box0, dimBox):
@@ -192,14 +212,21 @@ class Tile():
         self.drawlines()
 
     def __str__(self):
-        return "Mp0x_"+str(int(self.zeropoint.pos[0]))+"_y_"+str(int(self.zeropoint.pos[1]))+\
-               "_p1x_"+str(int(self.point1.pos[0]))+   "_y_"+str(int(self.point1.pos[1]))+\
-               "_p2x_"+str(int(self.point2.pos[0]))+   "_y_"+str(int(self.point2.pos[1]))
+        #sfn returns the string of the integer part, preceded by m if the number is negative.
+        return "Mp0x_"+sfn(self.zeropoint.pos[0])+"_y_"+sfn(self.zeropoint.pos[1])+\
+               "_p1x_"+sfn(self.point1.pos[0])+   "_y_"+sfn(self.point1.pos[1])+\
+               "_p2x_"+sfn(self.point2.pos[0])+   "_y_"+sfn(self.point2.pos[1])
 
     def modify_from_string(self, string):
         m=self.repattern.search(string)
         if m:
+            #we extract the coordinates from the string
             x0,y0, x1, y1, x2, y2=[int(i) for i in m.group('x0', 'y0', 'x1', 'y1', 'x2', 'y2')]
+            coordinateList=[]
+            for string in ['x0','y0', 'x1', 'y1', 'x2', 'y2']:
+                coordinateList.append(sign(m.group(string+'sign'))*int(m.group(string)) )
+            x0,y0, x1, y1, x2, y2=coordinateList
+            #we relocate the points and the lines
             self.zeropoint.relocate([x0,y0])
             self.point1.relocate([x1, y1])
             self.point2.relocate([x2,y2])
@@ -254,7 +281,7 @@ class Anvil():
         #we construct a pattern (coupled with the __str__ method and used in the "edit" method) for loading a save from a string. Also coupled with the tile __str__ method...
         repatternString=r"An_(?P<numtiles>\d+)_gW_(?P<gw>\d+)_H_(?P<gh>\d+)"+\
             r"_iW_(?P<iw>\d+)_H_(?P<ih>\d+)_ZX_(?P<zx>\d+)_Y_(?P<zy>\d+)"+\
-            r"(?P<maps>(_\d*Mp0x_\d+_y_\d+_p1x_\d+_y_\d+_p2x_\d+_y_\d+)*)"
+            r"(?P<maps>(_\d*Mp0x_m?\d+_y_m?\d+_p1x_m?\d+_y_m?\d+_p2x_m?\d+_y_m?\d+)*)"
         self.repattern=re.compile(repatternString)
         self.tiles=[] #to be completed when calling setTiles
   
@@ -315,7 +342,7 @@ class Forge():
     def makeWindows(self):
         #this creates the main window and returns it to be used in the main loop
         anvilNames=[anvil.name for anvil in self.anvils]
-        anvils_line=[[ sg.Frame("Anvil "+anvil.name, anvil.layout(anvilNames), font="Any 12", title_color="white", key="anvil_"+anvil.name) for anvil in self.anvils]]
+        anvils_line=[[ sg.Frame("Anvil "+anvil.name, anvil.layout(anvilNames), font="Any 12",  key="anvil_"+anvil.name) for anvil in self.anvils]]
         win=sg.Window("Forge", [[[sg.Text("Warning, zooming may freeze if the maps are too large or overlap too much. Too be improved...")]],\
             [sg.Col(anvils_line, size=(self.dimensions[0], self.dimensions[1]-50), scrollable=True) ], \
             [sg.Button(button_text="Reset Images", key="reset"),\
@@ -441,7 +468,7 @@ class Forge():
             mapstrings=m.group("maps")
             repatternstring=""
             for i in range(number_of_tiles):
-                repatternstring+=r"(?P<map"+str(i)+r">_\d*Mp0x_\d+_y_\d+_p1x_\d+_y_\d+_p2x_\d+_y_\d+)"
+                repatternstring+=r"(?P<map"+str(i)+r">_\d*Mp0x_m?\d+_y_m?\d+_p1x_m?\d+_y_m?\d+_p2x_m?\d+_y_m?\d+)"
             mapsPattern=re.compile(repatternstring)
             m2=mapsPattern.search(mapstrings)
             if not m2:
@@ -525,7 +552,7 @@ class Forge():
             
             repatternstring=""
             for i in range(number_of_tiles):
-                repatternstring+=r"(?P<map"+str(i)+r">_\d*Mp0x_\d+_y_\d+_p1x_\d+_y_\d+_p2x_\d+_y_\d+)"
+                repatternstring+=r"(?P<map"+str(i)+r">_\d*Mp0x_m?\d+_y_m?\d+_p1x_m?\d+_y_m?\d+_p2x_m?\d+_y_m?\d+)"
             mapsPattern=re.compile(repatternstring)
             m2=mapsPattern.search(mapstrings)
             if not m2:
@@ -533,7 +560,7 @@ class Forge():
                 return False
             #getting the maps dimensions
             gw, gh, iw, ih, zx, zy=[int(string) for string in m.group('gw', 'gh', 'iw', 'ih', 'zx', 'zy')]
-            newAnvil=Anvil(name,(gw, gh), (iw, ih), (zx, zy), numberOfTiles=number_of_tiles)
+            newAnvil=Anvil(name,(gw, gh), (iw, ih), (zx, zy), numberOfTiles=number_of_tiles, maxNumberOfTiles=max(number_of_tiles, self.anvils[-1].maxNumberOfTiles))
             self.anvils.append(newAnvil)
             return newAnvil
 
@@ -550,6 +577,7 @@ class Forge():
         self.makeFractal()                    
         return newwin
 
+#the remove_anvil function is cut in two to separate ui interactions from the action
     def remove_anvil(self, anvil):
         if len(self.anvils)==1:
             sg.popup('You cannot remove the last anvil.')
@@ -558,6 +586,9 @@ class Forge():
         result=sg.popup_ok_cancel('This operation is irreversible. We will need to reload the window.')
         if result=="Cancel":
             return self.win
+        return self.remove_anvil_action(anvil)
+
+    def remove_anvil_action(self, anvil):
         #first we remove the anvil's name from the tiles, so that it can be forgotten forever.
         for anvil2 in self.anvils:
             for i in range(anvil2.maxNumberOfTiles):
@@ -607,9 +638,8 @@ class Forge():
             anvilsPattern+=r"__(?P<name"+str(i)+r">[^_]+)_"
             anvilsPattern+=r"(?P<anvil"+str(i)+r">An_\d+_gW_\d+_H_\d+"+\
                 r"_iW_\d+_H_\d+_ZX_\d+_Y_\d+"+\
-                r"(_\d*Mp0x_\d+_y_\d+_p1x_\d+_y_\d+_p2x_\d+_y_\d+)*)"
+                r"(_\d*Mp0x_m?\d+_y_m?\d+_p1x_m?\d+_y_m?\d+_p2x_m?\d+_y_m?\d+)*)"
             anvilsPattern+=r"(?P<childs"+str(i)+r">(_[^_]+)*)"
-        #anvilsPattern=r'__[^_]+_An_\d+_gW_\d+_H_\d+_iW_\d+_H_\d+_ZX_\d+_Y_\d+(_\d*Mp0x_\d+_y_\d+_p1x_\d+_y_\d+_p2x_\d+_y_\d+)*(_[_]+)*'
         anvilRe=re.search(anvilsPattern,anvilString)
         if not anvilRe:
             sg.popup('Not a valid Forge string !')
@@ -649,12 +679,6 @@ class Forge():
             
                 
             
-
-
-
-        
-        
-
 
 
 #a series of methods to react to events.This only deals with events that never restart the window.
@@ -757,7 +781,7 @@ def zoomWindow(fractal, imageName, sizeScaling):
     fractal.updateCurrentImage()
     fractal.zoomOnPosition(0,0, sizeScaling)
     layout=[[sg.Graph((imageDimensions[1], imageDimensions[0]), (0, imageDimensions[0]), (imageDimensions[1], 0), key="zoom_graph", enable_events=True )],\
-    [sg.Button("Start Zooming", key="zoom_but")]]
+    [sg.Button("Start Zooming", key="zoom_but"), sg.Button('Save the pictures to a file', key='save')]]
     win=sg.Window("Zooming", layout)
     graph=win["zoom_graph"]
     win.Finalize()
@@ -767,11 +791,16 @@ def zoomWindow(fractal, imageName, sizeScaling):
     zooming=False
     zoomcoef=1
     zoomEach=1.02
-    zoomStep=1.3
+    zoomStep=ZOOMSTEP
     im=copy.copy(fractal.currentImage)
     imgbytes=cv2.imencode(".ppm", im )[1].tobytes()
     graph_image=graph.draw_image(data=imgbytes, location=[0,0])
     graph.send_figure_to_back(graph_image)
+    #some variables linked to the saving option
+    saving=False
+    path_to_saving_folder=''
+    i=0
+    j=0
     while True:
         event, value=win.read(timeout=1)
         if event in ('Exit', None):
@@ -785,6 +814,19 @@ def zoomWindow(fractal, imageName, sizeScaling):
                 win["zoom_but"].update("Start zooming")
         if event=="zoom_graph":
             target.relocate(value["zoom_graph"])
+
+        if event=="save" and saving==False:
+            text=sg.popup_get_text('Write the directory path in which you want to save')
+            if text:
+                path_to_saving_folder=text
+                saving=True
+                win['save'].update('stop saving')
+                cv2.imwrite(path_to_saving_folder+'/im'+str(i).zfill(4)+'.jpg', im)
+                i+=1
+        elif event=='save' and saving==True:
+            saving=False
+            win['save'].update('Save')
+
         if zooming:
             if zoomcoef<zoomStep:
                 zoomcoef=zoomcoef*zoomEach
@@ -793,6 +835,12 @@ def zoomWindow(fractal, imageName, sizeScaling):
                 zoomcoef=1
                 fractal.zoomOnPosition(target.pos[0], target.pos[1], zoomStep)
                 im=copy.copy(fractal.currentImage)
+            if saving:
+                j+=1
+                if j==SAVERATIO:
+                    j=0
+                    cv2.imwrite(path_to_saving_folder+'/im'+str(i).zfill(4)+'.jpg', im)
+                    i+=1
         graph.delete_figure(graph_image)
         imgbytes=cv2.imencode(".ppm", im )[1].tobytes()
         graph_image=graph.draw_image(data=imgbytes, location=[0,0])
@@ -803,11 +851,7 @@ def zoomWindow(fractal, imageName, sizeScaling):
 
 
         
-def main_loop(forge):
-    win=forge.makeWindows()
-    forge.makeFractal()
-    forge.update()
-
+def main_loop(forge, win):
     while True:
         event, value = win.read(timeout=0)
         #first we deal with events that cannot reopen the window
@@ -865,11 +909,26 @@ if __name__ == '__main__':
     winHeight=MONITOR_HEIGHT-100
 
 
-    anvil=Anvil("A", (anvilWidth, anvilHeight), (imageWidth, imageHeight), imageZero, numberOfTiles=2)
-    anvil2=Anvil("B", (anvil2Width, anvil2Height), (image2Width, image2Height), image2Zero, numberOfTiles=2)
+    anvil=Anvil("DefA", (anvilWidth, anvilHeight), (imageWidth, imageHeight), imageZero, numberOfTiles=2)
+    anvil2=Anvil("DefB", (anvil2Width, anvil2Height), (image2Width, image2Height), image2Zero, numberOfTiles=2)
+
     longAnvil=Anvil('C', (900,200), (800,100),[50,50], numberOfTiles=5)
     forge=Forge([anvil, anvil2],[winWidth,winHeight ])
-    
-    
-    main_loop(forge)
+    win=forge.makeWindows()
+    forge.makeFractal()
+    forge.update()
+    ok_cancel=sg.popup_ok_cancel('Do you want to load a forge ? Click cancel if you want the default forge.')
+    if ok_cancel=='OK':
+        win=forge.load_forge()
+        event,value=win.read(0)
+        for anvil in forge.anvils:
+            for tileNumber in range(anvil.numberOfTiles):
+                forge.updateFractalOrigin(anvil, tileNumber, value)
+                forge.updateFractalMap(anvil, tileNumber)
+        forge.remove_anvil_action(forge.anvils[0])
+        win=forge.remove_anvil_action(forge.anvils[0])
+    print('start main loop')
+
+    main_loop(forge, win)
+   
 
