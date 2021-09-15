@@ -4,7 +4,7 @@ This is an interface to construct fractal Iterated Functions Sets, with a "polys
 
 It was submitted to the "Summer of Math Exposition" by 3blue1brown. If you just want the exposition and you don't want to use the interface, skip the "installation" part and just read the exposition bellow.
 
-This version is up-to-date ! I won't merge this branch until the end of the SOME to allow for consistent reviewing.
+
 
 # Installation
 
