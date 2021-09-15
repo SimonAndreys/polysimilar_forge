@@ -6,9 +6,10 @@ import copy
 import time
 import re
 import screeninfo
+import imageio
 
 
-FRACTAL_COLOR=[248,208,138]
+FRACTAL_COLOR=[163,163,20]
 LINE_COLOR="white"
 POINT_COLOR="blue"
 
@@ -18,9 +19,22 @@ LINEWIDTH=2
 DIAGWIDTH=1
 
 ZOOMSTEP=1.3
-ZOOMNFRAMES=10
+ZOOMNFRAMES=30
 ZOOMSLEEP=0.01
-SAVERATIO=5
+SAVERATIO=5  #during zoom, one image is saved for 10 displayed images
+initialFramesInVideo=20
+FPS=24
+MAXNUMBEROFOBJECTS=5000 #when the current image in the zoom has more than 500 objects, the windows freezes down
+
+#some keyboard settings
+translationSpeed=4
+rotationSpeed=1 #degree per press on the key
+resizeCoeff=1.01
+iterationsPerMove=4
+keyEventPattern=re.compile('^(?P<key>\w):?\d*$')
+azertykeys={'up':'z','left':'q','down':'s','right':'d','trig':'e','anti':'a','bigg':'r','smal':'f'}
+qwertykeys={'up':'w','left':'a','down':'s','right':'d','trig':'e','anti':'q','bigg':'r','smal':'f'}
+keys=azertykeys
 
 MAX_MAPS_PER_ANVILS=5
 MAX_ANVILS=16
@@ -28,11 +42,30 @@ MAX_ANVILS=16
 monitor=screeninfo.get_monitors()[0]
 MONITOR_WIDTH, MONITOR_HEIGHT=monitor.width, monitor.height
 
+'''
+my_new_theme = {'BACKGROUND': '#709053',
+                'TEXT': '#fff4c9',
+                'INPUT': '#c7e78b',
+                'TEXT_INPUT': '#000000',
+                'SCROLL': '#c7e78b',
+                'BUTTON': ('white', '#709053'),
+                'PROGRESS': ('#01826B', '#D0D0D0'),
+                'BORDER': 1,
+                'SLIDER_DEPTH': 0,
+                'PROGRESS_DEPTH': 0}
 
+# Add your dictionary to the PySimpleGUI themes
+sg.theme_add_new('MyNewTheme', my_new_theme)
+sg.theme('MyNewTheme')
+'''
 
 sg.theme('darkBrown5')
 GRAPH_BACKGROUND_COLOR="gray29"
 
+
+#we create the rotation matrix
+c=np.pi/180
+rotationMatrix=np.array([[np.cos(c*rotationSpeed), -np.sin(c*rotationSpeed)], [np.sin(c*rotationSpeed), np.cos(c*rotationSpeed)]])
 
 
 def sfn(n):   #string from natural number, replacing - by m for easier copying and pasting
@@ -62,6 +95,7 @@ class Point():
         
 
     def relocate(self, newpos):
+        newpos=[int(i) for i in newpos]
         self.graph.delete_figure(self.elem)
         self.pos=np.array(newpos)
         self.elem=self.graph.draw_circle((newpos[0], newpos[1]), self.pointRadius, fill_color=self.color, line_color=self.linecolor)
@@ -123,6 +157,7 @@ class Tile():
         self.point3=Point(self.pos3, graph, color=color)
         self.points=[self.zeropoint, self.point1, self.point2, self.point3]
         self.grasped=None  #when grasped, this is the number of the grasped point (0,1,2,3)
+        self.keyboardOngoing=False #true when keyboard modification is ongoing.
         #a regular expression pattern to modify the map from keyboard input
         self.repattern=re.compile(r'Mp0x_(?P<x0sign>m?)(?P<x0>\d+)_y_(?P<y0sign>m?)(?P<y0>\d+)_p1x_(?P<x1sign>m?)(?P<x1>\d+)_y_(?P<y1sign>m?)(?P<y1>\d+)_p2x_(?P<x2sign>m?)(?P<x2>\d+)_y_(?P<y2sign>m?)(?P<y2>\d+)$')
         self.drawlines()
@@ -152,6 +187,63 @@ class Tile():
         self.eraselines()
         for point in self.points:
             point.erase()
+
+    def flip(self): #flips along the diagonal
+        q=self.point3.pos-self.zeropoint.pos
+        newpositions=[(2*np.dot(p-self.zeropoint.pos, q)/np.linalg.norm(q)**2)*q-p+2*self.zeropoint.pos for p in [self.point1.pos, self.point2.pos]]
+        self.point1.relocate(newpositions[0])
+        self.point2.relocate(newpositions[1])
+        self.eraselines()
+        self.drawlines()
+
+    def startKeyboardTransfo(self):
+        self.rotationDegrees=0
+        self.resizeCoeff=1
+        for p in self.points:
+            p.anchorpos=p.pos
+            p.activate()
+
+    def translate(self, delta):   #delta is a vector
+        for p in self.points:
+            p.relocate(p.pos+delta)
+            p.anchorpos=p.anchorpos+delta #we do that in case we do a rotation or resize just after
+        self.eraselines()
+        self.drawlines()
+
+
+    def keyboardEvent(self, inputKey):
+        if self.keyboardOngoing==False:
+            self.startKeyboardTransfo()
+        if keys['up']==inputKey:
+             self.translate(np.array([0,-translationSpeed]))
+        elif keys['left']==inputKey:
+            self.translate(np.array([-translationSpeed, 0]))
+        elif keys['down']==inputKey:
+            self.translate(np.array([0,translationSpeed]))
+        elif keys['right']==inputKey:
+            self.translate(np.array([translationSpeed, 0]))
+        #now for the resizing events
+        else:
+            if keys['trig']==inputKey:
+                self.rotationDegrees+=rotationSpeed
+            elif keys['anti']==inputKey:
+                self.rotationDegrees+=-rotationSpeed
+            elif keys['bigg']==inputKey:
+                self.resizeCoeff=self.resizeCoeff*resizeCoeff
+            elif keys['smal']==inputKey:
+                self.resizeCoeff=self.resizeCoeff/resizeCoeff
+            else:  #if we did noting, we return false and set keyboardOngoing to false
+                self.keyboardOngoing=False
+                return False
+            #if we did something, we eventually rotate and resize, and we set the keyboardOngoing to true and return true
+            rotationMatrix=np.array([[np.cos(c*self.rotationDegrees), -np.sin(c*self.rotationDegrees)], [np.sin(c*self.rotationDegrees), np.cos(c*self.rotationDegrees)]])
+            for p in self.points[1:]:
+                p.relocate(self.zeropoint.anchorpos+self.resizeCoeff*rotationMatrix.dot(p.anchorpos-self.zeropoint.anchorpos))
+            self.eraselines()
+            self.drawlines()
+        self.keyboardOngoing=True
+        return True
+        
 
     def startmove(self, mousePos):
         self.originalMousePos=np.array(mousePos)
@@ -285,7 +377,7 @@ class Anvil():
         self.repattern=re.compile(repatternString)
         self.tiles=[] #to be completed when calling setTiles
   
-    def regularName(self, name):
+    def regularName(self, name):  #testing whether the name of the anvil is ok.
         if not name:
             return False
         if re.search('^\d.*|.*\d$|_', name):
@@ -293,20 +385,22 @@ class Anvil():
             return False
         else:
             return True
+
     def layout(self, anvilNames):
         graph_layout=sg.Graph(self.dimSpace, (0, self.dimSpace[1]), (self.dimSpace[0], 1), key="graph_"+self.name, enable_events=True, drag_submits=True,  background_color=GRAPH_BACKGROUND_COLOR)
         line_layout=[[sg.Button(button_text='Add map', key='add_map_but'+self.name), sg.Button(button_text='Remove map', key='remove_map_but'+self.name)]]+\
-        [[sg.Text("_"+str(i)+" Origin", key=self.name+str(i)+"text"),\
+        [[sg.CB(str(i),key='check_'+self.name+str(i)),sg.Text("_"+str(i)+" Origin", key='text_'+self.name+str(i)),\
         sg.Combo(anvilNames,default_value=self.tilesChilds[i], key="origin_"+self.name+str(i)) ,\
         sg.Button(button_text='Rectify', key='rectify_but'+self.name+str(i) ),\
-        sg.Button(button_text='Edit', key='edit_but'+self.name+str(i)),\
-        sg.Input( key="input"+self.name+str(i), size=(42,None))] \
+        sg.Button(button_text='Copy', key='copy_'+self.name+str(i)),\
+        sg.Button(button_text='Flip', key='flip_'+self.name+str(i))] \
          for i in range(self.maxNumberOfTiles)]
         
         layout=[[graph_layout] ,\
             [sg.Frame('Maps',line_layout)],\
-            [sg.Button("Open zooming window", key="zoomingActivation_"+self.name),sg.Text(" Multiply size by : "), sg.Combo([1+i/10 for i in range(20)], key="multiplier_"+self.name, default_value=1.0),\
-                sg.Button('Save Anvil', key='save_'+self.name), sg.Button('Load Anvil', key='load_'+self.name), sg.Button('Remove Anvil', key='remove_'+self.name)]]
+            [sg.Button("Open zooming window", key="zoomingActivation_"+self.name),sg.Text(" Multiply size by : "), sg.Combo([1+i/5 for i in range(11)], key="multiplier_"+self.name, default_value=1.0)],\
+            [sg.Text('Anvil actions : '), sg.Button('Save', key='save_'+self.name), sg.Button('Load', key='load_'+self.name), sg.Button('Remove', key='remove_'+self.name)],\
+                [sg.Text('Total tile area : ', key='area_'+self.name,tooltip='The sum of the area of the tiles, divided by the area of the image. Vanishing may happen when the ratio is less than 1.')]]
         return layout
 
     def setTiles(self,graph):
@@ -338,12 +432,13 @@ class Forge():
         self.iterationsCounter=0
         self.brightenOn=brightenOn
         self.maxNumberOfAnvils=maxNumberOfAnvils
+        self.isCopyingMap=False
 
     def makeWindows(self):
         #this creates the main window and returns it to be used in the main loop
         anvilNames=[anvil.name for anvil in self.anvils]
         anvils_line=[[ sg.Frame("Anvil "+anvil.name, anvil.layout(anvilNames), font="Any 12",  key="anvil_"+anvil.name) for anvil in self.anvils]]
-        win=sg.Window("Forge", [[[sg.Text("Warning, zooming may freeze if the maps are too large or overlap too much. Too be improved...")]],\
+        win=sg.Window("Forge", [[[sg.Text('_', key="event_display"),sg.Text("Warning, zooming may freeze if the maps are too large or overlap too much. Too be improved...")]],\
             [sg.Col(anvils_line, size=(self.dimensions[0], self.dimensions[1]-50), scrollable=True) ], \
             [sg.Button(button_text="Reset Images", key="reset"),\
             sg.Button(button_text="Iterate", key="iterate", size=(6,1)),\
@@ -351,16 +446,16 @@ class Forge():
             sg.Text('Brighten cutoff:'),\
             sg.Slider(range=(1,254), default_value=1, key="brighten_slider", enable_events=True, orientation='h'),\
             sg.Button('Add Anvil', key='add_anvil'),\
-            sg.Button(button_text='reopen', key='reopen'),\
+            #sg.Button(button_text='reopen', key='reopen'),\  #debug button
             sg.Button('Save Forge', key='saveForge'), \
-            sg.Button('Load Forge', key='loadForge') ]] )
+            sg.Button('Load Forge', key='loadForge') ]], return_keyboard_events=True )
         
         win.Finalize()
 
         #hiding the unused maps
         for anvil in self.anvils:
             for i in range(anvil.numberOfTiles, anvil.maxNumberOfTiles):
-                win[anvil.name+str(i)+"text"].hide_row()
+                win['check_'+anvil.name+str(i)].hide_row()
             anvil.setTiles(win["graph_"+anvil.name])
         self.win=win
         return win
@@ -382,7 +477,7 @@ class Forge():
         frac=f.Polysimilar(images, families, currentImageDims, currentImageFamily)
         self.frac=frac
 
-    def update(self):
+    def update(self):  #updating the graph image and the area of anvils
         for anvil in self.anvils:
             graph=self.win["graph_"+anvil.name]
             imgbytes=cv2.imencode('.ppm', self.frac.images[anvil.name])[1].tobytes()
@@ -390,6 +485,25 @@ class Forge():
                 graph.delete_figure(anvil.graph_image)  
             anvil.graph_image = graph.draw_image(data=imgbytes, location=(anvil.box0[0],anvil.box0[1]))    # draw new image
             graph.send_figure_to_back(anvil.graph_image)
+        #compute the area and update
+            a=sum([np.abs(child.map.det) for child in self.frac.families[anvil.name]])
+            self.win['area_'+anvil.name].update('Tile area ratio: '+str(a) )
+        
+
+    def copy_paste(self, anvil, tileNumber):
+        if not self.isCopyingMap:
+            for anvil2 in self.anvils:
+                for i in range(anvil2.numberOfTiles):
+                    self.win['copy_'+anvil2.name+str(i)].update('Paste')
+            self.isCopyingMap=True
+            self.copiedTileString=str(anvil.tiles[tileNumber])           
+        else:
+            for anvil2 in self.anvils:
+                for i in range(anvil2.numberOfTiles):
+                    self.win['copy_'+anvil2.name+str(i)].update('Copy')
+            self.isCopyingMap=False
+            anvil.tiles[tileNumber].modify_from_string(self.copiedTileString)
+              
 
     def updateFractalMap(self, anvil, tileNumber):
             child=self.frac.families[anvil.name][tileNumber]
@@ -405,14 +519,14 @@ class Forge():
                 sg.popup('bypassing a misterious bug. Carry on')
                 return 0
             child.map=f.Affine_transform.from_trimat(anvil.getMatrix(tile, childBox0=box0, childDimBox=dimBox))
-            self.win["input"+anvil.name+str(tileNumber)].update(str(tile))
 
     def updateFractalOrigin(self, anvil, tileNumber, value):
         tile=anvil.tiles[tileNumber]
         child=self.frac.families[anvil.name][tileNumber]
         newOrigin=value["origin_"+anvil.name+str(tileNumber)]
-        tile.child=newOrigin
-        child.name=newOrigin
+        if newOrigin in [anvil.name for anvil in self.anvils]:
+            tile.child=newOrigin
+            child.name=newOrigin
 
     def add_map(self,anvil):
         i=anvil.numberOfTiles
@@ -435,7 +549,7 @@ class Forge():
                 return newin
         else:
             anvil.numberOfTiles+=1
-            self.win[anvil.name+str(i)+"text"].unhide_row()
+            self.win['check_'+anvil.name+str(i)].unhide_row()
             anvil.tiles.append(Tile(anvil.tilePositions[i][0], anvil.tilePositions[i][1], anvil.tilePositions[i][2], self.win['graph_'+anvil.name], name="map_"+anvil.name+str(i), child=anvil.tilesChilds[i]))
             self.frac.addChild(anvil.name, f.Child(anvil.tilesChilds[i], f.Affine_transform.id()))
             self.updateFractalMap( anvil, i)
@@ -447,7 +561,7 @@ class Forge():
             sg.popup('No map to remove !')
         else:
             anvil.save()
-            self.win[anvil.name+str(i-1)+'text'].hide_row()
+            self.win['check_'+anvil.name+str(i-1)].hide_row()
             anvil.tiles[i-1].erase()
             anvil.tiles=anvil.tiles[:-1]
             self.frac.families[anvil.name]=self.frac.families[anvil.name][:-1]
@@ -506,7 +620,7 @@ class Forge():
                 for tile in anvil.tiles:
                     tile.erase()
                 for i in range(anvil.numberOfTiles):
-                    self.win[anvil.name+str(i)+"text"].unhide_row()
+                    self.win['check_'+anvil.name+str(i)].unhide_row()
                 anvil.setTiles(self.win['graph_'+anvil.name])
                 newin=self.win
             #loading the maps save from the m2 group we extracted before
@@ -661,7 +775,6 @@ class Forge():
             self.load_anvil(newAnvils[i], anvilRe.group('anvil'+str(i)))
             #modifying the childs
             childstring=childList[i]
-            print(childList[i])
             childPattern=''
             tiles=newAnvils[i].tiles
             for j in range(len(tiles)):
@@ -673,32 +786,54 @@ class Forge():
                 for j in range(len(tiles)):
                     #tiles[j].child=mchild.group('child'+str(j))
                     self.win['origin_'+newAnvils[i].name+str(j)].update(name+mchild.group('child'+str(j)))
-                    print(tiles[j].child)
         self.makeFractal()
         return newWin
             
                 
-            
-
-
+        
 #a series of methods to react to events.This only deals with events that never restart the window.
+
+    def keyboardEvent(self,event, value): 
+        search=keyEventPattern.search(event)
+        moved=False
+        if search:
+            inputKey=search.group('key')
+            for anvil in self.anvils:
+                for i in range(anvil.numberOfTiles):
+                    if value['check_'+anvil.name+str(i)]:  #we check that the tile is activated 
+                        moved=anvil.tiles[i].keyboardEvent(inputKey)
+                        if moved:
+                            self.updateFractalMap(anvil, i)
+                    else:
+                        anvil.tiles[i].keyboardOngoing=False #we terminate the keyboard movement of the other tiles
+            if moved:
+                [self.frac.refineAllImages() for i in range(iterationsPerMove)]
+                self.frac.brightenAllImages()
+        else: #if the event is not right, we terminate the keyboard movement of all tiles
+            for anvil in self.anvils:
+                for tile in anvil.tiles:
+                    tile.keyboardOngoing=False
+
+                        
+
     def reactEvent(self,event, value):
         #reacting to events
         if event!="__TIMEOUT__":
             pass
+        if self.keyboardEvent(event, value):
+            return False
         for anvil in self.anvils:
             if event=="zoomingActivation_"+anvil.name:
-                zoomWindow(self.frac,anvil.name, float(value["multiplier_"+anvil.name]))
-                self.frac.currentImageFamily=[f.Child(anvil.name, f.Affine_transform.id())]
-                break
+                if re.search(r'^\d*.\d*$',str(value['multiplier_'+anvil.name])):
+                    zoomWindow(self.frac,anvil.name, float(value["multiplier_"+anvil.name]))
+                    self.frac.currentImageFamily=[f.Child(anvil.name, f.Affine_transform.id())]
+                    break
             if event=="save_"+anvil.name:
                 string=str(anvil)
                 sg.popup_get_text( default_text=string, message='Copy the following string:', size=(100, None))
             if event=="remove_map_but"+anvil.name:
                 self.remove_map(anvil)
             for tileNumber in range(len(anvil.tiles)):
-                if event=="edit_but"+anvil.name+str(tileNumber):
-                    self.editingMap(anvil, tileNumber)
                 if event=='rectify_but'+anvil.name+str(tileNumber):
                     tile=anvil.tiles[tileNumber]
                     for anvil2 in self.anvils:
@@ -706,6 +841,10 @@ class Forge():
                             width, height=anvil2.dimBox
                             break
                     tile.rectify(width, height)
+                if event=='copy_'+anvil.name+str(tileNumber):
+                    self.copy_paste(anvil, tileNumber)
+                if event=='flip_'+anvil.name+str(tileNumber):
+                    anvil.tiles[tileNumber].flip()
         if event=="reset":
             self.resetImages()
         elif event=="iterate":
@@ -726,45 +865,40 @@ class Forge():
         for anvil in self.anvils:
             for tileNumber in range(len(anvil.tiles)):
                 self.updateFractalOrigin(anvil, tileNumber, value)
-                self.updateFractalMap(anvil, tileNumber)  
+                self.updateFractalMap(anvil, tileNumber) 
+        
         self.update()
         return False
         
     def mousePressed(self, anvil, value):
-        i=0
-        grasped=False
+        i=0  #counting which is the number of the tile
+        grasped=False #used after the 'for' to see if we need to do the tile.mousePressed method (which activate the tile and avoid the "switching" when hovering over another tile)
         for tile in anvil.tiles:
             if tile.grasped!=None:  #warning tile.grasped can be zero so if "tile.grasped:" instead of this line would cause bugs 
                 grasped=True
                 tile.mousePressed('graph_'+anvil.name, value)
                 self.iterationsCounter=0
-                self.win[anvil.name+str(i)+"text"].update("X"+str(i)+" Origin")
                 break
             i+=1
         if not grasped:
+            i=0
             for tile in anvil.tiles:
                 if tile.mousePressed('graph_'+anvil.name,value)!=None:  #warning mousepressed can return 0 so if tile.mousePressed(...): would cause bug
-                    break
+                    self.win['check_'+anvil.name+str(i)].update(True)
+                else : 
+                    self.win['check_'+anvil.name+str(i)].update(False)  #clicking unchecks all tiles
+                i+=1
+            for anvil2 in self.anvils:
+                if anvil2!=anvil:
+                    for i in range(anvil2.numberOfTiles):
+                        self.win['check_'+anvil2.name+str(i)].update(False)
                 
     def mouseReleased(self, anvil,value):
         i=0
         for tile in anvil.tiles:
-            self.win[anvil.name+str(i)+"text"].update("_"+str(i)+" Origin")
             tile.mouseReleased()
             i+=1
 
-    def editingMap(self, anvil, tileNumber):
-        self.win['edit_but'+anvil.name+str(tileNumber)].update('Validate Edit')
-        while True:
-            event, value=self.win.read(timeout=0)
-            if event in ('Exit', None):
-                break
-            if event=='edit_but'+anvil.name+str(tileNumber):
-                string=value['input'+anvil.name+str(tileNumber)]
-                if not anvil.tiles[tileNumber].modify_from_string(string):
-                    sg.popup('Not a valid expression !')
-                self.win['edit_but'+anvil.name+str(tileNumber)].update('Edit')
-                break
 
     def resetImages(self):
         self.iterationsCounter=0
@@ -780,8 +914,8 @@ def zoomWindow(fractal, imageName, sizeScaling):
     fractal.currentImageFamily=[f.Child(imageName, f.Affine_transform.id())]
     fractal.updateCurrentImage()
     fractal.zoomOnPosition(0,0, sizeScaling)
-    layout=[[sg.Graph((imageDimensions[1], imageDimensions[0]), (0, imageDimensions[0]), (imageDimensions[1], 0), key="zoom_graph", enable_events=True )],\
-    [sg.Button("Start Zooming", key="zoom_but"), sg.Button('Save the pictures to a file', key='save')]]
+    layout=[[sg.Button("Start Zooming", key="zoom_but"), sg.Button('Save as a video', key='save'), sg.Text('Number of objects : '+str(len(fractal.currentImageFamily)),key='nobj')],\
+        [sg.Graph((imageDimensions[1], imageDimensions[0]), (0, imageDimensions[0]), (imageDimensions[1], 0), key="zoom_graph", enable_events=True )]]
     win=sg.Window("Zooming", layout)
     graph=win["zoom_graph"]
     win.Finalize()
@@ -790,7 +924,7 @@ def zoomWindow(fractal, imageName, sizeScaling):
 
     zooming=False
     zoomcoef=1
-    zoomEach=1.02
+    zoomEach=ZOOMSTEP**(1/ZOOMNFRAMES)
     zoomStep=ZOOMSTEP
     im=copy.copy(fractal.currentImage)
     imgbytes=cv2.imencode(".ppm", im )[1].tobytes()
@@ -805,7 +939,9 @@ def zoomWindow(fractal, imageName, sizeScaling):
         event, value=win.read(timeout=1)
         if event in ('Exit', None):
             break
-        if event=="zoom_but":
+        if event=='_TIMEOUT_':
+            pass
+        elif event=="zoom_but":
             if zooming==False:
                 zooming=True
                 win["zoom_but"].update("Stop zooming")
@@ -816,16 +952,19 @@ def zoomWindow(fractal, imageName, sizeScaling):
             target.relocate(value["zoom_graph"])
 
         if event=="save" and saving==False:
-            text=sg.popup_get_text('Write the directory path in which you want to save')
+            text=sg.popup_get_text('Write the path to the file (ending by .mp4)')
             if text:
                 path_to_saving_folder=text
                 saving=True
                 win['save'].update('stop saving')
-                cv2.imwrite(path_to_saving_folder+'/im'+str(i).zfill(4)+'.jpg', im)
+                writer=imageio.get_writer(path_to_saving_folder, fps=FPS)
+                for i in range(initialFramesInVideo):
+                    writer.append_data(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
                 i+=1
         elif event=='save' and saving==True:
             saving=False
             win['save'].update('Save')
+            writer.close
 
         if zooming:
             if zoomcoef<zoomStep:
@@ -834,12 +973,17 @@ def zoomWindow(fractal, imageName, sizeScaling):
             else:
                 zoomcoef=1
                 fractal.zoomOnPosition(target.pos[0], target.pos[1], zoomStep)
+                nobj=len(fractal.currentImageFamily)
+                if nobj>MAXNUMBEROFOBJECTS:
+                    sg.popup(str(nobj)+'is too many children' )
+                    return 'too_many_children'
+                win['nobj'].update('Number of objects : '+str(nobj))
                 im=copy.copy(fractal.currentImage)
             if saving:
                 j+=1
                 if j==SAVERATIO:
                     j=0
-                    cv2.imwrite(path_to_saving_folder+'/im'+str(i).zfill(4)+'.jpg', im)
+                    writer.append_data(cv2.cvtColor(im, cv2.COLOR_BGR2RGB))
                     i+=1
         graph.delete_figure(graph_image)
         imgbytes=cv2.imencode(".ppm", im )[1].tobytes()
@@ -852,12 +996,24 @@ def zoomWindow(fractal, imageName, sizeScaling):
 
         
 def main_loop(forge, win):
+    previous_event=''
+    eventCounter=0
     while True:
         event, value = win.read(timeout=0)
         #first we deal with events that cannot reopen the window
         if event in ('Exit', None):
             break
-        forge.reactEvent(event, value)
+        if event=='__TIMEOUT__':
+            pass
+        #counting and displaying the event to the window, for debug
+        else:
+            if event==previous_event:
+                eventCounter+=1
+            else:
+                eventCounter=0
+            previous_event=event
+            win["event_display"].update('event '+str(event)+' time '+ str(eventCounter))
+            forge.reactEvent(event, value)
         #iterating the fractal 
         if forge.iterationsCounter<forge.maxIterations:
             forge.frac.refineAllImages()
@@ -917,8 +1073,8 @@ if __name__ == '__main__':
     win=forge.makeWindows()
     forge.makeFractal()
     forge.update()
-    ok_cancel=sg.popup_ok_cancel('Do you want to load a forge ? Click cancel if you want the default forge.')
-    if ok_cancel=='OK':
+    ok_cancel=sg.popup_ok_cancel('Click OK if you want the default forge, Cancel if you want to load a save.')
+    if ok_cancel=='Cancel':
         win=forge.load_forge()
         event,value=win.read(0)
         for anvil in forge.anvils:
@@ -927,8 +1083,5 @@ if __name__ == '__main__':
                 forge.updateFractalMap(anvil, tileNumber)
         forge.remove_anvil_action(forge.anvils[0])
         win=forge.remove_anvil_action(forge.anvils[0])
-    print('start main loop')
 
     main_loop(forge, win)
-   
-
