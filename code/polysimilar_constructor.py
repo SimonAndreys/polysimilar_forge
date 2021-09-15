@@ -44,6 +44,7 @@ class Affine_transform():
         self.trimat()
         self.blankImage=None
         self.isImageDefined=False
+        self.det=np.linalg.det(self.m)
 
     @classmethod
     def tripoints(cls, originalPoints, modifiedPoints, probability=1):
