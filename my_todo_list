@@ -1,11 +1,11 @@
-This was patch up hastily to meet the "Summer of Math Exposition" deadline.
+
 
 Comming (soon ?):
 -add anvils and maps from within the ui.  DONE
 -save and load anvils, maps, forge and images from external files. DONE
 -cleaner code 
--handling errors.
--polychromatic effects ?
+-handling errors. (some bugs are handled...)
+-polychromatic effects ? No
 
 Do not hesitate to write constructive criticism and suggestions. No insults, only snake names allowed.
 
